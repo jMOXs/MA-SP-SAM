@@ -8,7 +8,13 @@ from skimage.transform import resize
 from ma_sp_sam.prompts import PromptPackage
 
 
-def convert_prompt_package_to_sam_inputs(package: PromptPackage, image_shape: tuple[int, int]) -> dict[str, Any]:
+def convert_prompt_package_to_sam_inputs(
+    package: PromptPackage,
+    image_shape: tuple[int, int],
+    *,
+    use_mask_input: bool = False,
+    mask_input_size: tuple[int, int] = (256, 256),
+) -> dict[str, Any]:
     """Convert one PromptPackage into SamPredictor-compatible numpy inputs."""
     height, width = _validate_image_shape(image_shape)
     points = [*package.positive_points, *package.negative_points]
@@ -18,19 +24,25 @@ def convert_prompt_package_to_sam_inputs(package: PromptPackage, image_shape: tu
     if package.box_prompt is not None:
         box = np.asarray(package.box_prompt.xyxy, dtype=np.float32)
     mask_input = None
+    coarse_mask = None
     if package.coarse_mask_prompt is not None and package.coarse_mask_prompt.mask is not None:
-        mask_input = _coarse_mask_to_sam_input(package.coarse_mask_prompt.mask, image_shape=(height, width))
+        coarse_mask = np.asarray(package.coarse_mask_prompt.mask).astype(np.float32)
+        if use_mask_input:
+            mask_input = _coarse_mask_to_sam_input(coarse_mask, mask_input_size=mask_input_size)
 
     ring_points = package.ring_prompt.ring_points.astype(np.float32)
     metadata = {
         "instance_id": package.instance_id,
         "quality_prior": float(package.quality_prior),
         "source": package.source,
+        "coarse_mask_shape": None if coarse_mask is None else tuple(int(value) for value in coarse_mask.shape),
         "ring_points": ring_points,
         "inner_ring_points": package.ring_prompt.inner_points.astype(np.float32),
         "outer_ring_points": package.ring_prompt.outer_points.astype(np.float32),
         "ring_prompt_source": package.ring_prompt.source,
     }
+    if coarse_mask is not None:
+        metadata["coarse_mask"] = coarse_mask
     return {
         "point_coords": point_coords,
         "point_labels": point_labels,
@@ -40,10 +52,11 @@ def convert_prompt_package_to_sam_inputs(package: PromptPackage, image_shape: tu
     }
 
 
-def _coarse_mask_to_sam_input(mask: np.ndarray, *, image_shape: tuple[int, int]) -> np.ndarray:
+def _coarse_mask_to_sam_input(mask: np.ndarray, *, mask_input_size: tuple[int, int]) -> np.ndarray:
     mask = np.asarray(mask).astype(np.float32)
-    if mask.shape != image_shape:
-        mask = resize(mask, image_shape, order=0, preserve_range=True, anti_aliasing=False).astype(np.float32)
+    target_size = _validate_image_shape(mask_input_size)
+    if mask.shape != target_size:
+        mask = resize(mask, target_size, order=0, preserve_range=True, anti_aliasing=False).astype(np.float32)
     return mask[None, ...].astype(np.float32)
 
 

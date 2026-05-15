@@ -24,7 +24,7 @@ def _prompt_packages():
     ).packages
 
 
-def test_convert_prompt_package_to_sam_inputs_preserves_points_box_mask_and_metadata():
+def test_convert_prompt_package_to_sam_inputs_defaults_to_points_and_box_only():
     package = _prompt_packages()[0]
 
     sam_inputs = convert_prompt_package_to_sam_inputs(package, image_shape=(8, 9))
@@ -33,11 +33,27 @@ def test_convert_prompt_package_to_sam_inputs_preserves_points_box_mask_and_meta
     assert sam_inputs["point_labels"].tolist() == [1, 0]
     assert sam_inputs["point_coords"][0].tolist() == [2.0, 2.0]
     assert sam_inputs["box"].tolist() == [1.0, 1.0, 3.0, 3.0]
-    assert sam_inputs["mask_input"].shape == (1, 8, 9)
-    assert sam_inputs["mask_input"].dtype == np.float32
+    assert sam_inputs["mask_input"] is None
     assert sam_inputs["metadata"]["instance_id"] == 7
+    assert sam_inputs["metadata"]["coarse_mask_shape"] == (8, 9)
     assert "ring_points" in sam_inputs["metadata"]
     assert sam_inputs["metadata"]["ring_points"].shape[1] == 2
+
+
+def test_convert_prompt_package_to_sam_inputs_can_resize_low_res_mask_prior():
+    package = _prompt_packages()[0]
+
+    sam_inputs = convert_prompt_package_to_sam_inputs(
+        package,
+        image_shape=(8, 9),
+        use_mask_input=True,
+        mask_input_size=(256, 256),
+    )
+
+    assert sam_inputs["mask_input"].shape == (1, 256, 256)
+    assert sam_inputs["mask_input"].dtype == np.float32
+    assert sam_inputs["metadata"]["coarse_mask_shape"] == (8, 9)
+    assert "coarse_mask" in sam_inputs["metadata"]
 
 
 def test_importing_sam_package_without_segment_anything_does_not_crash():

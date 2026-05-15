@@ -42,7 +42,7 @@ class FakePredictor:
         count = 3 if multimask_output else 1
         masks = np.zeros((count, height, width), dtype=bool)
         masks[:, 1:4, 1:4] = True
-        scores = np.linspace(0.9, 0.7, count, dtype=np.float32)
+        scores = np.asarray([0.1, 0.8, 0.4][:count], dtype=np.float32)
         logits = np.ones((count, 4, 4), dtype=np.float32)
         return masks, scores, logits
 
@@ -86,10 +86,32 @@ def test_sam_adapter_mock_predicts_from_packages_and_converts_grayscale_to_rgb(m
     assert all(isinstance(prediction, SAMMaskPrediction) for prediction in predictions)
     assert predictions[0].masks.shape == (1, 8, 8)
     assert predictions[0].scores.shape == (1,)
+    assert predictions[0].best_index == 0
     assert adapter.predictor.image.shape == (8, 8, 3)
     assert adapter.predictor.image.dtype == np.uint8
+    assert adapter.predictor.calls[0]["mask_input"] is None
     assert adapter.predictor.calls[0]["point_labels"][0] == 1
     assert adapter.predictor.calls[0]["box"].tolist() == [1.0, 1.0, 3.0, 3.0]
+
+
+def test_sam_adapter_can_enable_low_res_mask_input_and_tracks_best_index(monkeypatch):
+    _install_fake_segment_anything(monkeypatch)
+    from ma_sp_sam.sam.sam_adapter import SAMAdapter, best_mask
+
+    adapter = SAMAdapter(checkpoint="/tmp/fake_sam.pth", model_type="vit_b", device="cpu")
+    image = np.zeros((8, 8), dtype=np.uint8)
+
+    prediction = adapter.predict_from_package(
+        image,
+        _packages()[0],
+        multimask_output=True,
+        use_mask_input=True,
+    )
+
+    assert adapter.predictor.calls[0]["mask_input"].shape == (1, 256, 256)
+    assert prediction.best_index == 1
+    assert best_mask(prediction).shape == (8, 8)
+    assert prediction.prompt_metadata["coarse_mask_shape"] == (8, 8)
 
 
 def test_sam_adapter_missing_segment_anything_error_is_clear(monkeypatch):

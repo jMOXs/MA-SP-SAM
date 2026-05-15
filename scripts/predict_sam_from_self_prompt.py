@@ -18,7 +18,7 @@ import torch
 
 from ma_sp_sam.prompts.prompt_synthesizer import PromptSynthesizer
 from ma_sp_sam.prompts.proposal_generator import ProposalGenerator
-from ma_sp_sam.sam.sam_adapter import SAMAdapter, SAMMaskPrediction, SEGMENT_ANYTHING_MISSING
+from ma_sp_sam.sam.sam_adapter import SAMAdapter, SAMMaskPrediction, SEGMENT_ANYTHING_MISSING, best_mask
 from ma_sp_sam.utils.io import load_yaml, write_tiff_u16
 from predict_self_prompt import _build_dataset, _build_model, _resolve
 
@@ -34,6 +34,8 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=5)
     parser.add_argument("--device", default=None)
     parser.add_argument("--out", default="outputs/sam_predictions")
+    parser.add_argument("--use-mask-input", action="store_true")
+    parser.add_argument("--save-all-candidates", action="store_true")
     args = parser.parse_args()
 
     try:
@@ -47,6 +49,8 @@ def main() -> None:
             limit=args.limit,
             device_name=args.device,
             out_root=_resolve(args.out),
+            use_mask_input=args.use_mask_input,
+            save_all_candidates=args.save_all_candidates,
         )
     except RuntimeError as exc:
         if SEGMENT_ANYTHING_MISSING in str(exc):
@@ -66,6 +70,8 @@ def run_sam_prediction(
     limit: int | None,
     device_name: str | None,
     out_root: Path,
+    use_mask_input: bool = False,
+    save_all_candidates: bool = False,
 ) -> list[dict[str, Any]]:
     config = load_yaml(self_prompt_config)
     checkpoint = torch.load(self_prompt_checkpoint, map_location="cpu")
@@ -126,9 +132,13 @@ def run_sam_prediction(
                 item["image"],
                 packages,
                 multimask_output=True,
+                use_mask_input=use_mask_input,
             )
             candidate_label_map = _best_candidate_label_map(sam_predictions, image_shape=tuple(item["semantic"].shape[-2:]))
             write_tiff_u16(sample_dir / "sam_candidate_masks.tif", candidate_label_map)
+            _write_candidates_npz(sample_dir / "sam_candidates.npz", sam_predictions)
+            if save_all_candidates:
+                _write_candidate_arrays(sample_dir, sam_predictions)
             _write_scores_csv(sample_dir / "sam_scores.csv", sam_predictions)
             summary = _sam_prompt_summary(
                 dataset=row_dataset,
@@ -149,6 +159,7 @@ def run_sam_prediction(
                     "num_packages": len(packages),
                     "num_sam_predictions": len(sam_predictions),
                     "num_candidate_pixels": int(np.count_nonzero(candidate_label_map)),
+                    "use_mask_input": bool(use_mask_input),
                 }
             )
     _write_summary_csv(out_root / "summary.csv", rows)
@@ -165,17 +176,33 @@ def _best_candidate_label_map(
     for prediction in predictions:
         if prediction.masks.size == 0:
             continue
-        best_index = int(np.argmax(prediction.scores)) if prediction.scores.size else 0
-        mask = np.asarray(prediction.masks[best_index]).astype(bool)
+        mask = best_mask(prediction).astype(bool)
         if mask.shape != image_shape:
             raise ValueError(f"SAM mask shape {mask.shape} does not match image shape {image_shape}.")
         label_map[mask] = int(prediction.instance_id)
     return label_map
 
 
+def _write_candidates_npz(path: Path, predictions: list[SAMMaskPrediction]) -> None:
+    instance_ids = np.asarray([prediction.instance_id for prediction in predictions], dtype=np.int64)
+    scores = np.empty(len(predictions), dtype=object)
+    masks = np.empty(len(predictions), dtype=object)
+    best_indices = np.asarray([prediction.best_index for prediction in predictions], dtype=np.int64)
+    for index, prediction in enumerate(predictions):
+        scores[index] = prediction.scores
+        masks[index] = prediction.masks
+    np.savez(path, instance_ids=instance_ids, masks=masks, scores=scores, best_indices=best_indices)
+
+
+def _write_candidate_arrays(sample_dir: Path, predictions: list[SAMMaskPrediction]) -> None:
+    for prediction in predictions:
+        np.save(sample_dir / f"instance_{prediction.instance_id}_masks.npy", prediction.masks)
+        np.save(sample_dir / f"instance_{prediction.instance_id}_scores.npy", prediction.scores)
+
+
 def _write_scores_csv(path: Path, predictions: list[SAMMaskPrediction]) -> None:
     with path.open("w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["instance_id", "candidate_index", "score"])
+        writer = csv.DictWriter(f, fieldnames=["instance_id", "candidate_index", "score", "best_index"])
         writer.writeheader()
         for prediction in predictions:
             for index, score in enumerate(prediction.scores.tolist()):
@@ -184,12 +211,21 @@ def _write_scores_csv(path: Path, predictions: list[SAMMaskPrediction]) -> None:
                         "instance_id": prediction.instance_id,
                         "candidate_index": index,
                         "score": float(score),
+                        "best_index": prediction.best_index,
                     }
                 )
 
 
 def _write_summary_csv(path: Path, rows: list[dict[str, Any]]) -> None:
-    fieldnames = ["dataset", "split", "sample_id", "num_packages", "num_sam_predictions", "num_candidate_pixels"]
+    fieldnames = [
+        "dataset",
+        "split",
+        "sample_id",
+        "num_packages",
+        "num_sam_predictions",
+        "num_candidate_pixels",
+        "use_mask_input",
+    ]
     with path.open("w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
@@ -225,6 +261,7 @@ def _sam_prompt_summary(
                 "instance_id": prediction.instance_id,
                 "scores": prediction.scores.tolist(),
                 "num_masks": int(prediction.masks.shape[0]),
+                "best_index": prediction.best_index,
                 "prompt_metadata": _json_safe_metadata(prediction.prompt_metadata),
             }
             for prediction in sam_predictions

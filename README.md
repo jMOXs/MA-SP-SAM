@@ -12,7 +12,7 @@ MA-SP-SAM is a staged research codebase for TEM axon-myelin paired instance labe
 - `ProposalGenerator` and `PromptSynthesizer` are implemented for prompt candidate generation.
 - `SelfPromptLoss` and `scripts/train_self_prompt.py` are implemented for Self-Prompt training V1.
 - `scripts/predict_self_prompt.py` is implemented for Self-Prompt inference, prompt summary, and proposal QC diagnostics.
-- `SAMAdapter` V1 is implemented as an optional inference-only wrapper around Meta Segment Anything's `SamPredictor`.
+- `SAMAdapter` V1.1 is implemented as an optional inference-only wrapper around Meta Segment Anything's `SamPredictor`.
 - Local AimSeg archive indexing is available, but AimSeg is not used for V1 training.
 
 micro-SAM integration, SAM mask decoder training, PairRefinementModule integration, DANN/CORAL, and formal TEM1-to-TEM2 experiments are not implemented yet.
@@ -58,7 +58,7 @@ python scripts/predict_self_prompt.py \
 
 The prediction pipeline writes per-sample `semantic_pred.png`, `center_heatmap.png`, boundary heatmaps, `proposal_labels.tif`, `prompt_summary.json`, and a global `summary.csv` with proposal recall/precision/F1 diagnostics.
 
-## SAMAdapter V1
+## SAMAdapter V1.1
 
 SAMAdapter is optional. Install Meta Segment Anything separately when you want to run SAM inference:
 
@@ -67,6 +67,8 @@ pip install git+https://github.com/facebookresearch/segment-anything.git
 ```
 
 Download the SAM checkpoint yourself, for example a ViT-B checkpoint, and keep it outside git. Do not commit SAM weights to this repository.
+
+By default SAMAdapter sends point and box prompts to SAM. The coarse mask prompt is not passed by default because SAM's `mask_input` is a low-resolution prior, not a full-resolution mask. The converter keeps the coarse mask shape and ring points in prompt metadata for later analysis/refinement. Use `--use-mask-input` only when you want the coarse mask resized to a `256x256` low-resolution SAM prior.
 
 Run SAM from Self-Prompt packages:
 
@@ -82,5 +84,7 @@ python scripts/predict_sam_from_self_prompt.py \
   --device cpu \
   --out outputs/sam_predictions
 ```
+
+Add `--use-mask-input` to enable the resized low-resolution mask prior, and `--save-all-candidates` to export every candidate mask array per instance. The script always writes `sam_candidates.npz`, `sam_scores.csv` with `best_index`, and `sam_prompt_summary.json`.
 
 If `segment-anything` is not installed, the command exits with a clear dependency message instead of a traceback.
