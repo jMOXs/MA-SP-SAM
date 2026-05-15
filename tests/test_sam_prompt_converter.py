@@ -53,7 +53,9 @@ def test_convert_prompt_package_to_sam_inputs_can_resize_low_res_mask_prior():
     assert sam_inputs["mask_input"].shape == (1, 256, 256)
     assert sam_inputs["mask_input"].dtype == np.float32
     assert sam_inputs["metadata"]["coarse_mask_shape"] == (8, 9)
-    assert "coarse_mask" in sam_inputs["metadata"]
+    assert sam_inputs["metadata"]["coarse_mask_area"] == 9
+    assert sam_inputs["metadata"]["coarse_mask_bbox"] == (1, 1, 3, 3)
+    assert "coarse_mask" not in sam_inputs["metadata"]
 
 
 def test_importing_sam_package_without_segment_anything_does_not_crash():

@@ -13,9 +13,10 @@ MA-SP-SAM is a staged research codebase for TEM axon-myelin paired instance labe
 - `SelfPromptLoss` and `scripts/train_self_prompt.py` are implemented for Self-Prompt training V1.
 - `scripts/predict_self_prompt.py` is implemented for Self-Prompt inference, prompt summary, and proposal QC diagnostics.
 - `SAMAdapter` V1.1 is implemented as an optional inference-only wrapper around Meta Segment Anything's `SamPredictor`.
+- `PairRefinementModule` V1 is implemented for converting SAM candidate masks into paired fiber/axon/myelin instances.
 - Local AimSeg archive indexing is available, but AimSeg is not used for V1 training.
 
-micro-SAM integration, SAM mask decoder training, PairRefinementModule integration, DANN/CORAL, and formal TEM1-to-TEM2 experiments are not implemented yet.
+micro-SAM integration, SAM mask decoder training, DANN/CORAL, and formal TEM1-to-TEM2 experiments are not implemented yet.
 
 ## Quick checks
 
@@ -88,3 +89,20 @@ python scripts/predict_sam_from_self_prompt.py \
 Add `--use-mask-input` to enable the resized low-resolution mask prior, and `--save-all-candidates` to export every candidate mask array per instance. The script always writes `sam_candidates.npz`, `sam_scores.csv` with `best_index`, and `sam_prompt_summary.json`.
 
 If `segment-anything` is not installed, the command exits with a clear dependency message instead of a traceback.
+
+## Pair refinement
+
+Convert saved SAM candidates into paired instance predictions:
+
+```bash
+python scripts/refine_sam_predictions.py \
+  --sam-pred-root outputs/sam_predictions \
+  --self-prompt-root outputs/self_prompt_predictions \
+  --processed-root data/processed/astih_tem \
+  --dataset TEM1 \
+  --split test \
+  --limit 5 \
+  --out outputs/refined_predictions
+```
+
+The refinement step writes `refined_fiber_instance.tif`, `refined_axon_instance.tif`, `refined_myelin_instance.tif`, `refined_pair_table.csv`, and a global `summary.csv`.
