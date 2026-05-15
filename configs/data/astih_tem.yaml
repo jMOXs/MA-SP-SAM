@@ -1,0 +1,9 @@
+splits_root: ASTIH-main/ASTIH-main/data/splits
+datasets:
+  - TEM1
+  - TEM2
+splits:
+  - train
+  - test
+manifest_path: data/manifests/astih_tem_manifest.jsonl
+processed_root: data/processed/astih_tem

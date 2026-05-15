@@ -1,0 +1,6 @@
+aimseg_root: "8351731"
+manifest_path: data/manifests/aimseg_manifest.jsonl
+archives:
+  - Control_Dataset.rar
+  - Validation_Dataset_v1.rar
+  - Classifiers_v1.rar

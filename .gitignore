@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.cache/
+
+# Local environments
+.venv/
+venv/
+env/
+
+# Large local data sources kept outside version control
+ASTIH-main/
+8351731/
+*.rar
+
+# Generated project data and reports
+data/manifests/
+data/processed/
+outputs/
+
+# Training/runtime artifacts for later milestones
+checkpoints/
+runs/
+*.ckpt
+*.pth
+*.pt

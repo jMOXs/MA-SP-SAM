@@ -1,0 +1,17 @@
+[project]
+name = "ma-sp-sam"
+version = "0.1.0"
+description = "Data parsing and paired-label construction for MA-SP-SAM TEM axon-myelin segmentation."
+requires-python = ">=3.10"
+dependencies = [
+  "numpy",
+  "pandas",
+  "Pillow",
+  "PyYAML",
+  "scikit-image",
+  "torch",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

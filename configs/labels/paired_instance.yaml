@@ -1,0 +1,5 @@
+min_axon_area: 8
+min_myelin_area: 8
+g_ratio_min: 0.2
+g_ratio_max: 0.95
+connectivity: 1

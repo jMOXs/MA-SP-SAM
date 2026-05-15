@@ -1,0 +1,25 @@
+name: MA-SP-SAM
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - numpy
+  - pandas
+  - pillow
+  - pyyaml
+  - scipy=1.13.1
+  - scikit-image
+  - pytorch
+  - pytorch-cuda=12.4
+  - pytest
+  - pip
+  - pip:
+      - -e . --no-deps
+variables:
+  SKIMAGE_DATADIR: /sydata/js/MA-SP-SAM/.cache/scikit-image
+  MPLCONFIGDIR: /sydata/js/MA-SP-SAM/.cache/matplotlib
+  PIP_CACHE_DIR: /sydata/js/MA-SP-SAM/.cache/pip
+  PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
