@@ -15,6 +15,7 @@ if str(SRC_ROOT) not in sys.path:
 
 import numpy as np
 import torch
+from PIL import Image
 
 from ma_sp_sam.data.dataset_tem import DatasetTEM
 from ma_sp_sam.eval.proposal_quality import (
@@ -140,6 +141,7 @@ def run_prediction(
             )
 
             save_semantic_prediction_png(sample_dir / "semantic_pred.png", semantic_pred)
+            Image.fromarray(semantic_pred.astype(np.uint8)).save(sample_dir / "semantic_pred_labels.tif")
             save_heatmap_png(sample_dir / "center_heatmap.png", center_heatmap)
             save_heatmap_png(sample_dir / "inner_boundary_pred.png", inner_boundary)
             save_heatmap_png(sample_dir / "outer_boundary_pred.png", outer_boundary)

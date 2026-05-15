@@ -1,5 +1,13 @@
 from __future__ import annotations
 
+"""Legacy tensor-oriented pair refinement module.
+
+The current end-to-end MA-SP-SAM V1 pipeline uses
+``ma_sp_sam.refinement.pair_refinement``. This module is kept for backward
+compatibility with earlier tests and experiments that refined separate axon,
+myelin, and fiber candidate tensors directly.
+"""
+
 from dataclasses import dataclass
 from typing import Mapping, Sequence
 

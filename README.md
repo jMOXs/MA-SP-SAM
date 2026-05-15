@@ -14,6 +14,7 @@ MA-SP-SAM is a staged research codebase for TEM axon-myelin paired instance labe
 - `scripts/predict_self_prompt.py` is implemented for Self-Prompt inference, prompt summary, and proposal QC diagnostics.
 - `SAMAdapter` V1.1 is implemented as an optional inference-only wrapper around Meta Segment Anything's `SamPredictor`.
 - `PairRefinementModule` V1 is implemented for converting SAM candidate masks into paired fiber/axon/myelin instances.
+- End-to-End V1 pipeline orchestration and GT-QC summary export are implemented.
 - Local AimSeg archive indexing is available, but AimSeg is not used for V1 training.
 
 micro-SAM integration, SAM mask decoder training, DANN/CORAL, and formal TEM1-to-TEM2 experiments are not implemented yet.
@@ -57,7 +58,7 @@ python scripts/predict_self_prompt.py \
   --out outputs/self_prompt_predictions
 ```
 
-The prediction pipeline writes per-sample `semantic_pred.png`, `center_heatmap.png`, boundary heatmaps, `proposal_labels.tif`, `prompt_summary.json`, and a global `summary.csv` with proposal recall/precision/F1 diagnostics.
+The prediction pipeline writes per-sample `semantic_pred.png`, raw label-map `semantic_pred_labels.tif`, `center_heatmap.png`, boundary heatmaps, `proposal_labels.tif`, `prompt_summary.json`, and a global `summary.csv` with proposal recall/precision/F1 diagnostics.
 
 ## SAMAdapter V1.1
 
@@ -105,4 +106,38 @@ python scripts/refine_sam_predictions.py \
   --out outputs/refined_predictions
 ```
 
-The refinement step writes `refined_fiber_instance.tif`, `refined_axon_instance.tif`, `refined_myelin_instance.tif`, `refined_pair_table.csv`, and a global `summary.csv`.
+The refinement step writes `refined_fiber_instance.tif`, `refined_axon_instance.tif`, `refined_myelin_instance.tif`, `refined_pair_table.csv`, and a global `summary.csv`. If GT processed labels exist under `--processed-root`, refinement also reports `fiber_iou50_recall`, `fiber_iou50_precision`, `axon_dice`, `myelin_dice`, `pair_accuracy_proxy`, and `g_ratio_mae`. These GT labels are used only for evaluation/QC, never for refinement decisions.
+
+## End-to-End V1 pipeline
+
+Full mode runs Self-Prompt prediction, SAM prediction, pair refinement, and final summary merge:
+
+```bash
+python scripts/run_v1_pipeline.py \
+  --self-prompt-checkpoint checkpoints/self_prompt/best.pt \
+  --self-prompt-config configs/train/self_prompt.yaml \
+  --sam-checkpoint /path/to/sam_vit_b.pth \
+  --sam-model-type vit_b \
+  --dataset TEM1 \
+  --split test \
+  --limit 5 \
+  --device cuda \
+  --work-dir outputs/v1_pipeline
+```
+
+Skip-SAM mode is for reusing existing SAM candidates already saved under `work-dir/sam`:
+
+```bash
+python scripts/run_v1_pipeline.py \
+  --self-prompt-checkpoint checkpoints/self_prompt/best.pt \
+  --self-prompt-config configs/train/self_prompt.yaml \
+  --sam-checkpoint /path/to/unused_or_existing_sam.pth \
+  --dataset TEM1 \
+  --split test \
+  --limit 5 \
+  --device cpu \
+  --work-dir outputs/v1_pipeline \
+  --skip-sam
+```
+
+The merged report is written to `outputs/v1_pipeline/summary.csv` with key fields from self-prompt proposals, SAM candidates, refinement counts, and optional GT-QC metrics.

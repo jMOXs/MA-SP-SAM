@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 from PIL import Image
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -15,8 +16,10 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from ma_sp_sam.refinement import PairRefinementInput, PairRefinementModule, save_pair_refinement_output
+from ma_sp_sam.eval.refined_instance import evaluate_refined_prediction
+from ma_sp_sam.labels.paired_instances import PairedLabelBundle
 from ma_sp_sam.sam.sam_adapter import SAMMaskPrediction
-from ma_sp_sam.utils.io import read_array
+from ma_sp_sam.utils.io import read_array, read_mask
 
 
 def main() -> None:
@@ -52,7 +55,6 @@ def refine_directory(
     limit: int | None,
     out_root: Path,
 ) -> list[dict[str, object]]:
-    del processed_root
     module = PairRefinementModule()
     rows: list[dict[str, object]] = []
     sample_dirs = sorted(path for path in (sam_pred_root / dataset / split).iterdir() if path.is_dir())
@@ -75,7 +77,9 @@ def refine_directory(
         )
         out_dir = out_root / dataset / split / sample_id
         save_pair_refinement_output(output, out_dir)
-        rows.append(_summary_row(dataset, split, sample_id, output))
+        gt_bundle = _load_gt_bundle(processed_root / dataset / split / sample_id)
+        gt_metrics = None if gt_bundle is None else evaluate_refined_prediction(output, gt_bundle)
+        rows.append(_summary_row(dataset, split, sample_id, output, gt_metrics=gt_metrics))
 
     out_root.mkdir(parents=True, exist_ok=True)
     with (out_root / "summary.csv").open("w", encoding="utf-8", newline="") as f:
@@ -89,6 +93,12 @@ def refine_directory(
             "num_multi_axon",
             "mean_g_ratio",
             "median_g_ratio",
+            "fiber_iou50_recall",
+            "fiber_iou50_precision",
+            "axon_dice",
+            "myelin_dice",
+            "pair_accuracy_proxy",
+            "g_ratio_mae",
         ]
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
@@ -141,7 +151,7 @@ def _read_sam_predictions(sample_dir: Path, *, image_shape: tuple[int, int]) -> 
 
 
 def _read_semantic_prediction(sample_dir: Path) -> np.ndarray:
-    for name in ("semantic_pred.tif", "semantic_pred.png", "semantic.png"):
+    for name in ("semantic_pred_labels.tif", "semantic_pred.tif", "semantic_pred.png", "semantic.png"):
         path = sample_dir / name
         if path.exists():
             with Image.open(path) as img:
@@ -166,11 +176,30 @@ def _read_optional_label_map(path: Path, shape: tuple[int, int]) -> np.ndarray:
     return np.zeros(shape, dtype=np.uint16)
 
 
-def _summary_row(dataset: str, split: str, sample_id: str, output) -> dict[str, object]:
+def _load_gt_bundle(sample_dir: Path) -> PairedLabelBundle | None:
+    required = [
+        sample_dir / "semantic.png",
+        sample_dir / "fiber_instance.tif",
+        sample_dir / "axon_instance.tif",
+        sample_dir / "myelin_instance.tif",
+        sample_dir / "pair_table.csv",
+    ]
+    if not all(path.exists() for path in required):
+        return None
+    return PairedLabelBundle(
+        semantic=read_mask(sample_dir / "semantic.png"),
+        fiber_instance=read_array(sample_dir / "fiber_instance.tif"),
+        axon_instance=read_array(sample_dir / "axon_instance.tif"),
+        myelin_instance=read_array(sample_dir / "myelin_instance.tif"),
+        pair_table=pd.read_csv(sample_dir / "pair_table.csv"),
+    )
+
+
+def _summary_row(dataset: str, split: str, sample_id: str, output, *, gt_metrics: dict[str, float] | None = None) -> dict[str, object]:
     table = output.pair_table
     flags = table["flags"].astype(str) if not table.empty else []
     valid_g = table.loc[table["fiber_area"] > 0, "g_ratio"] if not table.empty else []
-    return {
+    row = {
         "dataset": dataset,
         "split": split,
         "sample_id": sample_id,
@@ -181,6 +210,16 @@ def _summary_row(dataset: str, split: str, sample_id: str, output) -> dict[str, 
         "mean_g_ratio": float(np.mean(valid_g)) if len(valid_g) else "",
         "median_g_ratio": float(np.median(valid_g)) if len(valid_g) else "",
     }
+    for key in (
+        "fiber_iou50_recall",
+        "fiber_iou50_precision",
+        "axon_dice",
+        "myelin_dice",
+        "pair_accuracy_proxy",
+        "g_ratio_mae",
+    ):
+        row[key] = "" if gt_metrics is None else gt_metrics.get(key, "")
+    return row
 
 
 def _resolve(path: str | Path) -> Path:
