@@ -75,9 +75,10 @@ class SelfPromptGenerator(nn.Module):
         Preferred GroupNorm groups. The implementation automatically picks a
         divisor of the channel count.
     dropout:
-        Dropout applied only in the prompt quality MLP.
+        Dropout applied before the dense prompt-quality head.
     quality_hidden_channels:
-        Hidden width of the quality MLP. Defaults to ``hidden_channels``.
+        Kept for backward-compatible construction. The dense V1 quality head
+        uses ``hidden_channels`` so it can return ``[B,1,H,W]`` logits.
     """
 
     def __init__(
@@ -103,7 +104,7 @@ class SelfPromptGenerator(nn.Module):
         if num_blocks < 0:
             raise ValueError("num_blocks must be non-negative.")
 
-        quality_hidden_channels = quality_hidden_channels or hidden_channels
+        del quality_hidden_channels
 
         blocks: list[nn.Module] = [ConvNormAct(in_channels, hidden_channels, norm_groups)]
         blocks.extend(ConvNormAct(hidden_channels, hidden_channels, norm_groups) for _ in range(num_blocks))
@@ -116,12 +117,8 @@ class SelfPromptGenerator(nn.Module):
         self.distance_head = DensePredictionHead(hidden_channels, hidden_channels, distance_channels, norm_groups)
 
         self.quality_head = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),
-            nn.Flatten(start_dim=1),
-            nn.Linear(hidden_channels, quality_hidden_channels),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(quality_hidden_channels, 1),
+            nn.Dropout2d(dropout),
+            DensePredictionHead(hidden_channels, hidden_channels, 1, norm_groups),
         )
 
     def forward(self, image_embedding: torch.Tensor, output_size: tuple[int, int] | None = None) -> SelfPromptOutput:
@@ -144,6 +141,7 @@ class SelfPromptGenerator(nn.Module):
         inner_boundary_map = self.inner_boundary_head(features)
         outer_boundary_map = self.outer_boundary_head(features)
         distance_map = self.distance_head(features)
+        prompt_quality_score = self.quality_head(features)
 
         if output_size is not None:
             semantic_logits = _resize_dense_map(semantic_logits, output_size)
@@ -151,8 +149,8 @@ class SelfPromptGenerator(nn.Module):
             inner_boundary_map = _resize_dense_map(inner_boundary_map, output_size)
             outer_boundary_map = _resize_dense_map(outer_boundary_map, output_size)
             distance_map = _resize_dense_map(distance_map, output_size)
+            prompt_quality_score = _resize_dense_map(prompt_quality_score, output_size)
 
-        prompt_quality_score = self.quality_head(features).squeeze(1)
         return SelfPromptOutput(
             semantic_logits=semantic_logits,
             axon_center_heatmap=axon_center_heatmap,

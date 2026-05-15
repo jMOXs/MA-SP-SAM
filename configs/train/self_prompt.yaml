@@ -1,0 +1,25 @@
+manifest_path: data/manifests/astih_tem_manifest.jsonl
+processed_root: data/processed/astih_tem
+dataset: TEM1
+train_split: train
+val_split: test
+
+in_channels: 1
+hidden_channels: 64
+num_blocks: 2
+lr: 0.001
+weight_decay: 0.0001
+batch_size: 2
+epochs: 10
+checkpoint_dir: checkpoints/self_prompt
+proposal_summary_interval: 1
+
+loss_weights:
+  semantic: 1.0
+  center: 1.0
+  boundary: 1.0
+  distance: 1.0
+
+center_sigma: 3.0
+center_threshold: 0.5
+boundary_threshold: 0.5

@@ -6,7 +6,12 @@ from typing import Any
 import pandas as pd
 
 from ma_sp_sam.data.astih_splits_index import SampleRecord, read_manifest
-from ma_sp_sam.labels.targets import boundary_maps_from_bundle, center_heatmap_from_instances
+from ma_sp_sam.labels.targets import (
+    boundary_maps_from_bundle,
+    center_heatmap_from_instances,
+    gaussian_center_heatmap_from_instances,
+    hover_distance_map_from_instances,
+)
 from ma_sp_sam.labels.paired_instances import PairedLabelBundle
 from ma_sp_sam.utils.io import read_array, read_image, read_mask
 
@@ -22,6 +27,9 @@ class DatasetTEM:
         dataset: str | None = None,
         split: str | None = None,
         require_processed: bool = True,
+        return_tensors: bool = False,
+        center_target: str = "gaussian",
+        center_sigma: float = 3.0,
     ) -> None:
         records = read_manifest(manifest_path)
         if dataset is not None:
@@ -32,6 +40,9 @@ class DatasetTEM:
         if require_processed:
             records = [record for record in records if (self._sample_dir(record) / "pair_table.csv").exists()]
         self.records = records
+        self.return_tensors = return_tensors
+        self.center_target = center_target
+        self.center_sigma = center_sigma
 
     def __len__(self) -> int:
         return len(self.records)
@@ -55,7 +66,17 @@ class DatasetTEM:
             pair_table=pair_table,
         )
         inner_boundary, outer_boundary = boundary_maps_from_bundle(bundle)
-        return {
+        if self.center_target == "point":
+            center_heatmap = center_heatmap_from_instances(axon_instance)
+        elif self.center_target == "gaussian":
+            center_heatmap = gaussian_center_heatmap_from_instances(axon_instance, sigma=self.center_sigma)
+        else:
+            raise ValueError("center_target must be 'gaussian' or 'point'.")
+        distance_map = hover_distance_map_from_instances(
+            fiber_instance=fiber_instance,
+            axon_instance=axon_instance,
+        )
+        item = {
             "dataset": record.dataset,
             "split": record.split,
             "sample_id": record.sample_id,
@@ -65,7 +86,42 @@ class DatasetTEM:
             "axon_instance": axon_instance,
             "myelin_instance": myelin_instance,
             "pair_table": pair_table,
-            "center_heatmap": center_heatmap_from_instances(axon_instance),
+            "center_heatmap": center_heatmap,
             "boundary_inner": inner_boundary,
             "boundary_outer": outer_boundary,
+            "distance_map": distance_map,
         }
+        if self.return_tensors:
+            item.update(_tensor_targets(item))
+        return item
+
+
+def _tensor_targets(item: dict[str, Any]) -> dict[str, Any]:
+    import torch
+
+    image = _image_to_chw_float(item["image"])
+    return {
+        "image": torch.from_numpy(image),
+        "semantic": torch.from_numpy(item["semantic"].astype("int64")),
+        "fiber_instance": torch.from_numpy(item["fiber_instance"].astype("int64")),
+        "axon_instance": torch.from_numpy(item["axon_instance"].astype("int64")),
+        "myelin_instance": torch.from_numpy(item["myelin_instance"].astype("int64")),
+        "center_heatmap": torch.from_numpy(item["center_heatmap"].astype("float32"))[None, ...],
+        "boundary_inner": torch.from_numpy(item["boundary_inner"].astype("float32"))[None, ...],
+        "boundary_outer": torch.from_numpy(item["boundary_outer"].astype("float32"))[None, ...],
+        "distance_map": torch.from_numpy(item["distance_map"].astype("float32")),
+    }
+
+
+def _image_to_chw_float(image) -> "np.ndarray":
+    import numpy as np
+
+    array = np.asarray(image)
+    if array.ndim == 3:
+        array = array.mean(axis=2)
+    if array.ndim != 2:
+        raise ValueError(f"Expected grayscale or RGB image, got shape {array.shape}.")
+    array = array.astype("float32")
+    if array.size and array.max() > 1.0:
+        array = array / 255.0
+    return array[None, ...]

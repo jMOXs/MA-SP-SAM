@@ -77,3 +77,42 @@ def test_generated_proposals_connect_to_prompt_synthesizer():
 
     assert [package.instance_id for package in result.packages] == [1]
     assert result.positive_points[0].xy == (4.0, 3.0)
+
+
+def test_boundary_near_center_does_not_drop_proposal():
+    labels = np.zeros((9, 9), dtype=np.uint8)
+    labels[2:7, 2:7] = 1
+    labels[4, 4] = 2
+    center_heatmap = np.zeros((1, 1, 9, 9), dtype=np.float32)
+    center_heatmap[0, 0, 4, 4] = 1.0
+    boundary_maps = np.zeros((1, 2, 9, 9), dtype=np.float32)
+    boundary_maps[0, :, 4, 4] = 1.0
+
+    batch = ProposalGenerator(center_threshold=0.5, boundary_threshold=0.5, min_area=2).generate(
+        semantic_logits=_semantic_logits_from_labels(labels),
+        center_heatmap=center_heatmap,
+        boundary_maps=boundary_maps,
+    )
+
+    assert len(batch.proposals[0]) == 1
+    assert batch.proposals[0][0].mask[4, 4]
+
+
+def test_proposal_label_map_backfills_boundary_pixels_to_cover_foreground():
+    labels = np.zeros((10, 10), dtype=np.uint8)
+    labels[2:8, 2:8] = 1
+    labels[4, 4] = 2
+    center_heatmap = np.zeros((1, 1, 10, 10), dtype=np.float32)
+    center_heatmap[0, 0, 4, 4] = 0.9
+    boundary_maps = np.zeros((1, 2, 10, 10), dtype=np.float32)
+    boundary_maps[0, :, 5, 2:8] = 1.0
+
+    batch = ProposalGenerator(center_threshold=0.5, boundary_threshold=0.5, min_area=2).generate(
+        semantic_logits=_semantic_logits_from_labels(labels),
+        center_heatmap=center_heatmap,
+        boundary_maps=boundary_maps,
+    )
+
+    foreground_area = int(np.count_nonzero(labels))
+    covered_area = int(np.count_nonzero(batch.label_maps[0]))
+    assert covered_area / foreground_area > 0.9

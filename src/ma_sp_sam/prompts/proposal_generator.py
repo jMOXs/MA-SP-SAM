@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Sequence
 
 import numpy as np
+from scipy import ndimage as ndi
 from skimage import measure
 
 from ma_sp_sam.prompts.prompt_synthesizer import InstanceProposal
@@ -69,24 +70,21 @@ class ProposalGenerator:
         barrier = np.zeros_like(foreground, dtype=bool)
         if self.use_boundaries and boundary.size:
             barrier = np.any(boundary > self.boundary_threshold, axis=0)
-        component_source = foreground & ~barrier
-        if not component_source.any():
-            component_source = foreground
-
         peaks = _center_peaks(center, threshold=self.center_threshold, foreground=foreground)
         if not peaks:
             return [], np.zeros_like(labels, dtype=np.uint16)
 
-        components = measure.label(component_source, connectivity=1)
-        peak_lookup = _peaks_by_component(peaks, components)
+        components = measure.label(foreground, connectivity=1)
 
         proposals: list[InstanceProposal] = []
         label_map = np.zeros_like(labels, dtype=np.uint16)
         next_instance_id = 1
-        for component_id in sorted(peak_lookup):
+        for component_id in range(1, int(components.max()) + 1):
             component_mask = components == component_id
-            component_peaks = peak_lookup[component_id]
-            split_masks = _split_component_by_nearest_peak(component_mask, component_peaks)
+            component_peaks = [peak for peak in peaks if component_mask[peak]]
+            if not component_peaks:
+                continue
+            split_masks = _split_component_by_nearest_peak(component_mask, component_peaks, barrier=barrier)
             for split_mask, peak in split_masks:
                 if int(split_mask.sum()) < self.min_area:
                     continue
@@ -203,25 +201,18 @@ def _center_peaks(
     return peaks
 
 
-def _peaks_by_component(
-    peaks: list[tuple[int, int]],
-    components: np.ndarray,
-) -> dict[int, list[tuple[int, int]]]:
-    grouped: dict[int, list[tuple[int, int]]] = {}
-    for peak in peaks:
-        component_id = int(components[peak])
-        if component_id == 0:
-            continue
-        grouped.setdefault(component_id, []).append(peak)
-    return grouped
-
-
 def _split_component_by_nearest_peak(
     component_mask: np.ndarray,
     peaks: list[tuple[int, int]],
+    *,
+    barrier: np.ndarray | None = None,
 ) -> list[tuple[np.ndarray, tuple[int, int]]]:
     if len(peaks) == 1:
         return [(component_mask, peaks[0])]
+    if barrier is not None and barrier.any():
+        seeded = _boundary_seeded_split(component_mask, peaks, barrier=barrier)
+        if seeded is not None:
+            return seeded
 
     ys, xs = np.where(component_mask)
     peak_array = np.asarray(peaks, dtype=np.int64)
@@ -234,4 +225,36 @@ def _split_component_by_nearest_peak(
         owned = assignments == index
         split_mask[ys[owned], xs[owned]] = True
         masks.append((split_mask, peak))
+    return masks
+
+
+def _boundary_seeded_split(
+    component_mask: np.ndarray,
+    peaks: list[tuple[int, int]],
+    *,
+    barrier: np.ndarray,
+) -> list[tuple[np.ndarray, tuple[int, int]]] | None:
+    seed_source = component_mask & ~barrier
+    for peak in peaks:
+        if component_mask[peak]:
+            seed_source[peak] = True
+    if not seed_source.any():
+        return None
+
+    seed_splits = _split_component_by_nearest_peak(seed_source, peaks, barrier=None)
+    seed_labels = np.zeros_like(component_mask, dtype=np.uint16)
+    for label, (seed_mask, _) in enumerate(seed_splits, start=1):
+        seed_labels[seed_mask] = label
+    if not seed_labels.any():
+        return None
+
+    _, nearest_indices = ndi.distance_transform_edt(seed_labels == 0, return_indices=True)
+    backfilled = seed_labels[tuple(nearest_indices)]
+    backfilled = np.where(component_mask, backfilled, 0)
+
+    masks: list[tuple[np.ndarray, tuple[int, int]]] = []
+    for label, peak in enumerate(peaks, start=1):
+        split_mask = backfilled == label
+        if split_mask.any():
+            masks.append((split_mask, peak))
     return masks

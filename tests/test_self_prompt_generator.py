@@ -1,9 +1,20 @@
 import pytest
+from pathlib import Path
 
 
 torch = pytest.importorskip("torch")
 
+from ma_sp_sam.models import SelfPromptGenerator as ExportedSelfPromptGenerator
+from ma_sp_sam.models import SelfPromptOutput as ExportedSelfPromptOutput
 from ma_sp_sam.models.self_prompt import SelfPromptGenerator, SelfPromptOutput
+
+
+def test_models_package_exports_single_self_prompt_implementation():
+    duplicate_path = Path(__file__).resolve().parents[1] / "src" / "ma_sp_sam" / "models" / "self_prompt_generator.py"
+
+    assert ExportedSelfPromptGenerator is SelfPromptGenerator
+    assert ExportedSelfPromptOutput is SelfPromptOutput
+    assert not duplicate_path.exists()
 
 
 def test_self_prompt_generator_outputs_expected_shapes_with_upsampling():
@@ -24,7 +35,7 @@ def test_self_prompt_generator_outputs_expected_shapes_with_upsampling():
     assert output.inner_boundary_map.shape == (2, 1, 64, 64)
     assert output.outer_boundary_map.shape == (2, 1, 64, 64)
     assert output.distance_map.shape == (2, 2, 64, 64)
-    assert output.prompt_quality_score.shape == (2,)
+    assert output.prompt_quality_score.shape == (2, 1, 64, 64)
 
 
 def test_self_prompt_generator_preserves_embedding_resolution_by_default_and_backprops():
