@@ -1,5 +1,6 @@
 """Prompt synthesis utilities for MA-SP-SAM."""
 
+from ma_sp_sam.prompts.proposal_generator import ProposalBatch, ProposalGenerator, generate_instance_proposals
 from ma_sp_sam.prompts.prompt_synthesizer import (
     BoxPrompt,
     CoarseMaskPrompt,
@@ -17,9 +18,12 @@ __all__ = [
     "CoarseMaskPrompt",
     "InstanceProposal",
     "PointPrompt",
+    "ProposalBatch",
+    "ProposalGenerator",
     "PromptPackage",
     "PromptSynthesisResult",
     "PromptSynthesizer",
     "RingPrompt",
+    "generate_instance_proposals",
     "synthesize_prompts",
 ]
