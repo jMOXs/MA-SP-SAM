@@ -64,12 +64,18 @@ class SyntheticSelfPromptDataset(Dataset):
         scale = max(float(max(y1 - y0, x1 - x0) / 2.0), 1.0)
         distance[0, foreground] = (xx[foreground].float() - cx) / scale
         distance[1, foreground] = (yy[foreground].float() - cy) / scale
+        fiber_instance = torch.zeros(h, w, dtype=torch.long)
+        fiber_instance[foreground] = 1
+        axon_instance = torch.zeros(h, w, dtype=torch.long)
+        axon_instance[semantic == 2] = 1
         return {
             "dataset": "synthetic",
             "split": "train",
             "sample_id": f"synthetic_{index:04d}",
             "image": image,
             "semantic": semantic,
+            "fiber_instance": fiber_instance,
+            "axon_instance": axon_instance,
             "center_heatmap": center.float(),
             "boundary_inner": boundary_inner,
             "boundary_outer": boundary_outer,

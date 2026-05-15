@@ -1,5 +1,9 @@
 import subprocess
 import sys
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_train_self_prompt_script_runs_one_synthetic_epoch(tmp_path):
@@ -34,7 +38,7 @@ boundary_threshold: 0.5
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/train_self_prompt.py",
+            str(PROJECT_ROOT / "scripts" / "train_self_prompt.py"),
             "--config",
             str(config_path),
             "--epochs",
@@ -44,7 +48,7 @@ boundary_threshold: 0.5
             "--device",
             "cpu",
         ],
-        cwd="/sydata/js/MA-SP-SAM",
+        cwd=PROJECT_ROOT,
         text=True,
         capture_output=True,
         check=True,
