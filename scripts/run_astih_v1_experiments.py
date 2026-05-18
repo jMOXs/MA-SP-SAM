@@ -40,6 +40,9 @@ def main() -> None:
             preflight_only=args.preflight_only,
             strict_preflight=not args.no_strict_preflight,
         )
+    except KeyboardInterrupt:
+        print("Interrupted by user.", file=sys.stderr)
+        raise SystemExit(130) from None
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         raise SystemExit(2) from None
@@ -79,9 +82,15 @@ def run_experiments(
         work_dir.mkdir(parents=True, exist_ok=True)
         _write_yaml(work_dir / "resolved_config.yaml", resolved)
         status = _initial_status(resolved)
+        print(
+            f"experiment start: {resolved['name']} dataset={resolved['dataset']} "
+            f"split={resolved['split']} mode={resolved['mode']} work_dir={work_dir}",
+            flush=True,
+        )
         preflight = check_experiment_preflight(resolved)
         _write_json(work_dir / "preflight.json", preflight)
         preflight_failed = has_failed_checks(preflight)
+        print(_preflight_message(resolved["name"], preflight), flush=True)
         if preflight_only:
             if strict_preflight and preflight_failed:
                 status["status"] = "preflight_failed"
@@ -91,6 +100,7 @@ def run_experiments(
             status["finished_at"] = _now()
             _write_json(work_dir / "run_status.json", status)
             statuses.append(status)
+            print(f"experiment {resolved['name']} status={status['status']}", flush=True)
             continue
         if strict_preflight and preflight_failed:
             status["status"] = "preflight_failed"
@@ -98,6 +108,7 @@ def run_experiments(
             status["finished_at"] = _now()
             _write_json(work_dir / "run_status.json", status)
             statuses.append(status)
+            print(f"experiment {resolved['name']} status=preflight_failed error={status['error']}", flush=True)
             continue
         try:
             run_v1_pipeline(
@@ -114,6 +125,10 @@ def run_experiments(
                 skip_sam=str(resolved["mode"]) == "skip_sam",
             )
             status["status"] = "success"
+        except KeyboardInterrupt:
+            status["status"] = "interrupted"
+            status["error"] = "Interrupted by user."
+            raise
         except Exception as exc:  # noqa: BLE001 - experiment runner records failures and continues.
             status["status"] = "failed"
             status["error"] = str(exc)
@@ -121,8 +136,10 @@ def run_experiments(
             status["finished_at"] = _now()
             _write_json(work_dir / "run_status.json", status)
             statuses.append(status)
+            print(f"experiment {resolved['name']} status={status['status']} error={status['error']}", flush=True)
 
     write_experiment_summary(work_root)
+    print(f"experiment summary written: {work_root}", flush=True)
     return statuses
 
 
@@ -148,6 +165,15 @@ def _disabled_experiments(experiments: list[dict[str, Any]], only: set[str] | No
             continue
         disabled.append(experiment)
     return disabled
+
+
+def _preflight_message(name: str, checks: list[dict[str, str]]) -> str:
+    counts = {
+        "pass": sum(check["status"] == "pass" for check in checks),
+        "warn": sum(check["status"] == "warn" for check in checks),
+        "fail": sum(check["status"] == "fail" for check in checks),
+    }
+    return f"preflight {name}: pass={counts['pass']} warn={counts['warn']} fail={counts['fail']}"
 
 
 def _validate_only_names(experiments: list[dict[str, Any]], only: set[str] | None) -> None:

@@ -29,6 +29,7 @@ def test_predict_self_prompt_runs_from_synthetic_checkpoint(tmp_path):
         "num_blocks": 1,
         "center_threshold": 0.0,
         "boundary_threshold": 1.1,
+        "proposal_max_proposals": 1,
     }
     model = SelfPromptGenerator(in_channels=1, hidden_channels=8, num_blocks=1)
     torch.save({"model_state": model.state_dict(), "config": config}, checkpoint)
@@ -37,7 +38,7 @@ def test_predict_self_prompt_runs_from_synthetic_checkpoint(tmp_path):
         encoding="utf-8",
     )
 
-    subprocess.run(
+    result = subprocess.run(
         [
             sys.executable,
             str(PROJECT_ROOT / "scripts" / "predict_self_prompt.py"),
@@ -61,12 +62,14 @@ def test_predict_self_prompt_runs_from_synthetic_checkpoint(tmp_path):
         capture_output=True,
         check=True,
     )
+    assert "self_prompt [1/2]" in result.stdout
 
     summary_path = out_dir / "summary.csv"
     assert summary_path.exists()
     rows = list(csv.DictReader(summary_path.open("r", encoding="utf-8")))
     assert len(rows) == 2
     assert {"proposal_recall50", "proposal_precision50", "proposal_f1_50"} <= set(rows[0])
+    assert rows[0]["proposal_recall50"] == ""
 
     sample_dirs = sorted(path for path in out_dir.rglob("*") if path.is_dir() and (path / "prompt_summary.json").exists())
     assert sample_dirs
@@ -78,3 +81,4 @@ def test_predict_self_prompt_runs_from_synthetic_checkpoint(tmp_path):
     assert (sample_dir / "proposal_labels.tif").exists()
     prompt_summary = json.loads((sample_dir / "prompt_summary.json").read_text(encoding="utf-8"))
     assert "num_proposals" in prompt_summary
+    assert prompt_summary["num_proposals"] <= 1

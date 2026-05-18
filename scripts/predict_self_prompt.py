@@ -101,11 +101,14 @@ def run_prediction(
         center_threshold=float(model_config.get("center_threshold", 0.5)),
         boundary_threshold=float(model_config.get("boundary_threshold", 0.5)),
         min_area=int(model_config.get("proposal_min_area", 1)),
+        max_proposals=_optional_int(model_config.get("proposal_max_proposals", 64)),
     )
     synthesizer = PromptSynthesizer(boundary_threshold=float(model_config.get("boundary_threshold", 0.5)))
+    compute_proposal_metrics = bool(model_config.get("compute_proposal_metrics", False))
 
     with torch.no_grad():
         for index in range(max_items):
+            print(f"self_prompt loading [{index + 1}/{max_items}]", flush=True)
             item = dataset[index]
             row_dataset = str(item.get("dataset", dataset_name if dataset_name else model_config.get("dataset", "TEM1")))
             row_split = str(item.get("split", split))
@@ -115,6 +118,7 @@ def run_prediction(
             sample_id = str(item.get("sample_id", f"sample_{index:04d}"))
             sample_dir = out_root / row_dataset / row_split / sample_id
             sample_dir.mkdir(parents=True, exist_ok=True)
+            print(f"self_prompt [{index + 1}/{max_items}] {row_dataset}/{row_split}/{sample_id}", flush=True)
 
             image = item["image"].unsqueeze(0).to(device)
             outputs = model(image)
@@ -139,6 +143,7 @@ def run_prediction(
                 boundary_maps=boundary_maps,
                 instance_proposals=proposals,
             )
+            print(f"self_prompt [{index + 1}/{max_items}] proposals={len(proposals)}", flush=True)
 
             save_semantic_prediction_png(sample_dir / "semantic_pred.png", semantic_pred)
             Image.fromarray(semantic_pred.astype(np.uint8)).save(sample_dir / "semantic_pred_labels.tif")
@@ -170,6 +175,7 @@ def run_prediction(
                     semantic_pred=semantic_pred,
                     item=item,
                     proposal_label_map=proposal_label_map,
+                    compute_proposal_metrics=compute_proposal_metrics,
                 )
             )
 
@@ -205,6 +211,7 @@ def _build_dataset(config: dict[str, Any], *, dataset_name: str, split: str):
         dataset=dataset_name or config.get("dataset", "TEM1"),
         split=split,
         return_tensors=True,
+        include_targets=False,
         center_target="gaussian",
         center_sigma=float(config.get("center_sigma", 3.0)),
     )
@@ -221,11 +228,12 @@ def _summary_row(
     semantic_pred: np.ndarray,
     item: dict[str, Any],
     proposal_label_map: np.ndarray,
+    compute_proposal_metrics: bool = False,
 ) -> dict[str, Any]:
     gt_fiber = _maybe_numpy(item.get("fiber_instance"))
     gt_fibers = _count_instances(gt_fiber) if gt_fiber is not None else None
     recall = precision = f1 = None
-    if gt_fiber is not None:
+    if compute_proposal_metrics and gt_fiber is not None:
         recall = proposal_recall_at_iou(proposal_label_map, gt_fiber, iou_threshold=0.5)
         precision = proposal_precision_at_iou(proposal_label_map, gt_fiber, iou_threshold=0.5)
         f1 = proposal_f1_at_iou(proposal_label_map, gt_fiber, iou_threshold=0.5)
@@ -285,6 +293,12 @@ def _count_instances(label_map: np.ndarray | None) -> int:
     if label_map is None:
         return 0
     return int(sum(1 for value in np.unique(label_map) if int(value) != 0))
+
+
+def _optional_int(value) -> int | None:
+    if value in (None, ""):
+        return None
+    return int(value)
 
 
 def _resolve(path: str | Path) -> Path:

@@ -5,11 +5,11 @@ train_split: train
 val_split: test
 
 in_channels: 1
-hidden_channels: 64
+hidden_channels: 32
 num_blocks: 2
 lr: 0.001
 weight_decay: 0.0001
-batch_size: 2
+batch_size: 1
 epochs: 10
 checkpoint_dir: checkpoints/self_prompt
 proposal_summary_interval: 0
@@ -23,3 +23,5 @@ loss_weights:
 center_sigma: 3.0
 center_threshold: 0.5
 boundary_threshold: 0.5
+proposal_max_proposals: 64
+compute_proposal_metrics: false

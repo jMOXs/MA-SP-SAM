@@ -30,6 +30,7 @@ class DatasetTEM:
         return_tensors: bool = False,
         center_target: str = "gaussian",
         center_sigma: float = 3.0,
+        include_targets: bool = True,
     ) -> None:
         records = read_manifest(manifest_path)
         if dataset is not None:
@@ -43,6 +44,7 @@ class DatasetTEM:
         self.return_tensors = return_tensors
         self.center_target = center_target
         self.center_sigma = center_sigma
+        self.include_targets = bool(include_targets)
 
     def __len__(self) -> int:
         return len(self.records)
@@ -65,17 +67,6 @@ class DatasetTEM:
             myelin_instance=myelin_instance,
             pair_table=pair_table,
         )
-        inner_boundary, outer_boundary = boundary_maps_from_bundle(bundle)
-        if self.center_target == "point":
-            center_heatmap = center_heatmap_from_instances(axon_instance)
-        elif self.center_target == "gaussian":
-            center_heatmap = gaussian_center_heatmap_from_instances(axon_instance, sigma=self.center_sigma)
-        else:
-            raise ValueError("center_target must be 'gaussian' or 'point'.")
-        distance_map = hover_distance_map_from_instances(
-            fiber_instance=fiber_instance,
-            axon_instance=axon_instance,
-        )
         item = {
             "dataset": record.dataset,
             "split": record.split,
@@ -86,11 +77,27 @@ class DatasetTEM:
             "axon_instance": axon_instance,
             "myelin_instance": myelin_instance,
             "pair_table": pair_table,
-            "center_heatmap": center_heatmap,
-            "boundary_inner": inner_boundary,
-            "boundary_outer": outer_boundary,
-            "distance_map": distance_map,
         }
+        if self.include_targets:
+            inner_boundary, outer_boundary = boundary_maps_from_bundle(bundle)
+            if self.center_target == "point":
+                center_heatmap = center_heatmap_from_instances(axon_instance)
+            elif self.center_target == "gaussian":
+                center_heatmap = gaussian_center_heatmap_from_instances(axon_instance, sigma=self.center_sigma)
+            else:
+                raise ValueError("center_target must be 'gaussian' or 'point'.")
+            distance_map = hover_distance_map_from_instances(
+                fiber_instance=fiber_instance,
+                axon_instance=axon_instance,
+            )
+            item.update(
+                {
+                    "center_heatmap": center_heatmap,
+                    "boundary_inner": inner_boundary,
+                    "boundary_outer": outer_boundary,
+                    "distance_map": distance_map,
+                }
+            )
         if self.return_tensors:
             item.update(_tensor_targets(item))
         return item
@@ -100,17 +107,23 @@ def _tensor_targets(item: dict[str, Any]) -> dict[str, Any]:
     import torch
 
     image = _image_to_chw_float(item["image"])
-    return {
+    targets = {
         "image": torch.from_numpy(image),
         "semantic": torch.from_numpy(item["semantic"].astype("int64")),
         "fiber_instance": torch.from_numpy(item["fiber_instance"].astype("int64")),
         "axon_instance": torch.from_numpy(item["axon_instance"].astype("int64")),
         "myelin_instance": torch.from_numpy(item["myelin_instance"].astype("int64")),
-        "center_heatmap": torch.from_numpy(item["center_heatmap"].astype("float32"))[None, ...],
-        "boundary_inner": torch.from_numpy(item["boundary_inner"].astype("float32"))[None, ...],
-        "boundary_outer": torch.from_numpy(item["boundary_outer"].astype("float32"))[None, ...],
-        "distance_map": torch.from_numpy(item["distance_map"].astype("float32")),
     }
+    if "center_heatmap" in item:
+        targets.update(
+            {
+                "center_heatmap": torch.from_numpy(item["center_heatmap"].astype("float32"))[None, ...],
+                "boundary_inner": torch.from_numpy(item["boundary_inner"].astype("float32"))[None, ...],
+                "boundary_outer": torch.from_numpy(item["boundary_outer"].astype("float32"))[None, ...],
+                "distance_map": torch.from_numpy(item["distance_map"].astype("float32")),
+            }
+        )
+    return targets
 
 
 def _image_to_chw_float(image) -> "np.ndarray":

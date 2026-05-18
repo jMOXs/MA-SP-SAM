@@ -79,6 +79,7 @@ def run_v1_pipeline(
     refined_dir = work_dir / "refined"
 
     config = load_yaml(self_prompt_config)
+    print(f"v1_pipeline self_prompt start: dataset={dataset} split={split} limit={limit}", flush=True)
     run_prediction(
         checkpoint_path=self_prompt_checkpoint,
         config_path=self_prompt_config,
@@ -88,13 +89,16 @@ def run_v1_pipeline(
         device_name=device,
         out_root=self_prompt_dir,
     )
+    print(f"v1_pipeline self_prompt done: {self_prompt_dir}", flush=True)
 
     if skip_sam:
         if not sam_dir.exists():
             raise FileNotFoundError(f"--skip-sam requires existing SAM predictions under {sam_dir}.")
+        print(f"v1_pipeline skip SAM: using {sam_dir}", flush=True)
     else:
         if sam_checkpoint is None:
             raise ValueError("--sam-checkpoint is required unless --skip-sam is used")
+        print(f"v1_pipeline SAM start: model_type={sam_model_type}", flush=True)
         run_sam_prediction(
             self_prompt_checkpoint=self_prompt_checkpoint,
             self_prompt_config=self_prompt_config,
@@ -108,8 +112,10 @@ def run_v1_pipeline(
             use_mask_input=use_mask_input,
             save_all_candidates=False,
         )
+        print(f"v1_pipeline SAM done: {sam_dir}", flush=True)
 
     processed_root = _processed_root_from_config(config)
+    print(f"v1_pipeline refinement start: processed_root={processed_root}", flush=True)
     refine_directory(
         sam_pred_root=sam_dir,
         self_prompt_root=self_prompt_dir,
@@ -119,6 +125,7 @@ def run_v1_pipeline(
         limit=limit,
         out_root=refined_dir,
     )
+    print(f"v1_pipeline refinement done: {refined_dir}", flush=True)
 
     rows = write_v1_summary(
         self_prompt_summary=self_prompt_dir / "summary.csv",

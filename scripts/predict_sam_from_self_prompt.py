@@ -90,6 +90,7 @@ def run_sam_prediction(
         center_threshold=float(model_config.get("center_threshold", 0.5)),
         boundary_threshold=float(model_config.get("boundary_threshold", 0.5)),
         min_area=int(model_config.get("proposal_min_area", 1)),
+        max_proposals=_optional_int(model_config.get("proposal_max_proposals", 64)),
     )
     synthesizer = PromptSynthesizer(boundary_threshold=float(model_config.get("boundary_threshold", 0.5)))
 
@@ -107,6 +108,7 @@ def run_sam_prediction(
             sample_id = str(item.get("sample_id", f"sample_{index:04d}"))
             sample_dir = out_root / row_dataset / row_split / sample_id
             sample_dir.mkdir(parents=True, exist_ok=True)
+            print(f"sam [{index + 1}/{max_items}] {row_dataset}/{row_split}/{sample_id}", flush=True)
 
             image = item["image"].unsqueeze(0).to(device)
             outputs = model(image)
@@ -128,6 +130,7 @@ def run_sam_prediction(
                 boundary_maps=boundary_maps,
                 instance_proposals=proposals,
             ).packages
+            print(f"sam [{index + 1}/{max_items}] packages={len(packages)}", flush=True)
             sam_predictions = sam_adapter.predict_from_packages(
                 item["image"],
                 packages,
@@ -277,6 +280,12 @@ def _json_safe_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
         else:
             safe[key] = value
     return safe
+
+
+def _optional_int(value) -> int | None:
+    if value in (None, ""):
+        return None
+    return int(value)
 
 
 if __name__ == "__main__":
