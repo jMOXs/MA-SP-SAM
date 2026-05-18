@@ -18,6 +18,7 @@ for path in (SRC_ROOT, SCRIPTS_ROOT):
         sys.path.insert(0, str(path))
 
 from ma_sp_sam.reporting import write_experiment_summary
+from ma_sp_sam.experiments.preflight import check_experiment_preflight, failed_check_summary, has_failed_checks
 from ma_sp_sam.utils.io import load_yaml
 from run_v1_pipeline import run_v1_pipeline
 
@@ -27,18 +28,36 @@ def main() -> None:
     parser.add_argument("--config", default="configs/experiments/astih_v1.yaml")
     parser.add_argument("--only", default=None, help="Comma-separated experiment names to run.")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--preflight-only", action="store_true")
+    parser.add_argument("--no-strict-preflight", action="store_true")
     args = parser.parse_args()
 
-    run_experiments(
-        config_path=_resolve(args.config),
-        only=_parse_only(args.only),
-        dry_run=args.dry_run,
-    )
+    try:
+        run_experiments(
+            config_path=_resolve(args.config),
+            only=_parse_only(args.only),
+            dry_run=args.dry_run,
+            preflight_only=args.preflight_only,
+            strict_preflight=not args.no_strict_preflight,
+        )
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(2) from None
 
 
-def run_experiments(*, config_path: Path, only: set[str] | None = None, dry_run: bool = False) -> list[dict[str, Any]]:
+def run_experiments(
+    *,
+    config_path: Path,
+    only: set[str] | None = None,
+    dry_run: bool = False,
+    preflight_only: bool = False,
+    strict_preflight: bool = True,
+) -> list[dict[str, Any]]:
     config = load_yaml(config_path)
-    experiments = _selected_experiments(config.get("experiments", []), only)
+    all_experiments = config.get("experiments", [])
+    _validate_only_names(all_experiments, only)
+    experiments = _selected_experiments(all_experiments, only)
+    disabled = _disabled_experiments(all_experiments, None)
     work_root = _resolve(config.get("work_root", "outputs/experiments"))
 
     if dry_run:
@@ -49,6 +68,8 @@ def run_experiments(*, config_path: Path, only: set[str] | None = None, dry_run:
                 f"- {resolved['name']}: dataset={resolved['dataset']} "
                 f"split={resolved['split']} mode={resolved['mode']} work_dir={resolved['work_dir']}"
             )
+        for experiment in disabled:
+            print(f"- disabled: {experiment['name']}")
         return []
 
     statuses: list[dict[str, Any]] = []
@@ -58,11 +79,31 @@ def run_experiments(*, config_path: Path, only: set[str] | None = None, dry_run:
         work_dir.mkdir(parents=True, exist_ok=True)
         _write_yaml(work_dir / "resolved_config.yaml", resolved)
         status = _initial_status(resolved)
+        preflight = check_experiment_preflight(resolved, strict=strict_preflight)
+        _write_json(work_dir / "preflight.json", preflight)
+        preflight_failed = has_failed_checks(preflight)
+        if preflight_only:
+            if strict_preflight and preflight_failed:
+                status["status"] = "preflight_failed"
+                status["error"] = failed_check_summary(preflight)
+            else:
+                status["status"] = "preflight_passed"
+            status["finished_at"] = _now()
+            _write_json(work_dir / "run_status.json", status)
+            statuses.append(status)
+            continue
+        if strict_preflight and preflight_failed:
+            status["status"] = "preflight_failed"
+            status["error"] = failed_check_summary(preflight)
+            status["finished_at"] = _now()
+            _write_json(work_dir / "run_status.json", status)
+            statuses.append(status)
+            continue
         try:
             run_v1_pipeline(
-                self_prompt_checkpoint=_resolve(resolved["self_prompt_checkpoint"]),
-                self_prompt_config=_resolve(resolved["self_prompt_config"]),
-                sam_checkpoint=None if not resolved.get("sam_checkpoint") else _resolve(resolved["sam_checkpoint"]),
+                self_prompt_checkpoint=Path(resolved["self_prompt_checkpoint"]),
+                self_prompt_config=Path(resolved["self_prompt_config"]),
+                sam_checkpoint=None if not resolved.get("sam_checkpoint") else Path(resolved["sam_checkpoint"]),
                 sam_model_type=str(resolved.get("sam_model_type", "vit_b")),
                 dataset=str(resolved["dataset"]),
                 split=str(resolved["split"]),
@@ -89,10 +130,38 @@ def _selected_experiments(experiments: list[dict[str, Any]], only: set[str] | No
     selected = []
     for experiment in experiments:
         name = str(experiment.get("name", ""))
+        if not bool(experiment.get("enabled", True)):
+            continue
         if only is not None and name not in only:
             continue
         selected.append(experiment)
     return selected
+
+
+def _disabled_experiments(experiments: list[dict[str, Any]], only: set[str] | None) -> list[dict[str, Any]]:
+    disabled = []
+    for experiment in experiments:
+        name = str(experiment.get("name", ""))
+        if bool(experiment.get("enabled", True)):
+            continue
+        if only is not None and name not in only:
+            continue
+        disabled.append(experiment)
+    return disabled
+
+
+def _validate_only_names(experiments: list[dict[str, Any]], only: set[str] | None) -> None:
+    if only is None:
+        return
+    available = {str(experiment.get("name", "")) for experiment in experiments}
+    unknown = sorted(only - available)
+    if unknown:
+        raise ValueError(
+            "Unknown experiment name(s): "
+            + ", ".join(unknown)
+            + "\nAvailable experiment name(s): "
+            + ", ".join(sorted(available))
+        )
 
 
 def _resolved_config(config: dict[str, Any], experiment: dict[str, Any], work_root: Path) -> dict[str, Any]:
@@ -105,10 +174,13 @@ def _resolved_config(config: dict[str, Any], experiment: dict[str, Any], work_ro
         "dataset": str(experiment.get("dataset", config.get("dataset", "TEM1"))),
         "split": str(experiment.get("split", config.get("split", "test"))),
         "mode": mode,
-        "self_prompt_checkpoint": str(experiment.get("self_prompt_checkpoint", config.get("self_prompt_checkpoint", ""))),
-        "self_prompt_config": str(experiment.get("self_prompt_config", config.get("self_prompt_config", ""))),
-        "sam_checkpoint": str(experiment.get("sam_checkpoint", config.get("sam_checkpoint", ""))),
+        "enabled": bool(experiment.get("enabled", True)),
+        "self_prompt_checkpoint": _optional_path_str(experiment.get("self_prompt_checkpoint", config.get("self_prompt_checkpoint", ""))),
+        "self_prompt_config": _optional_path_str(experiment.get("self_prompt_config", config.get("self_prompt_config", ""))),
+        "sam_checkpoint": _optional_path_str(experiment.get("sam_checkpoint", config.get("sam_checkpoint", ""))),
         "sam_model_type": str(experiment.get("sam_model_type", config.get("sam_model_type", "vit_b"))),
+        "segment_anything_required": bool(experiment.get("segment_anything_required", config.get("segment_anything_required", True))),
+        "processed_root": _optional_path_str(experiment.get("processed_root", config.get("processed_root", ""))),
         "limit": experiment.get("limit", config.get("limit")),
         "device": experiment.get("device", config.get("device")),
         "use_mask_input": bool(experiment.get("use_mask_input", config.get("use_mask_input", False))),
@@ -139,6 +211,12 @@ def _parse_only(value: str | None) -> set[str] | None:
 def _resolve(path: str | Path) -> Path:
     path = Path(path)
     return path if path.is_absolute() else PROJECT_ROOT / path
+
+
+def _optional_path_str(value: Any) -> str:
+    if value in (None, ""):
+        return ""
+    return str(_resolve(value))
 
 
 def _now() -> str:

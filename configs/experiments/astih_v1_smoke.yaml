@@ -1,17 +1,13 @@
 self_prompt_checkpoint: checkpoints/self_prompt/best.pt
 self_prompt_config: configs/train/self_prompt.yaml
-sam_checkpoint: checkpoints/sam/sam_vit_b.pth
+sam_checkpoint:
 sam_model_type: vit_b
-limit: 5
+limit: 1
 device: cpu
 work_root: outputs/experiments
 
 experiments:
-  - name: tem1_internal
+  - name: tem1_skip_sam_smoke
     dataset: TEM1
     split: test
-    mode: full
-  - name: tem2_external
-    dataset: TEM2
-    split: test
-    mode: full
+    mode: skip_sam

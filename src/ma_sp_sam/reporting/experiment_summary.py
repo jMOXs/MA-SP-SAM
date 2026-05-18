@@ -44,14 +44,50 @@ AGGREGATE_METRICS = [
 
 METRIC_FIELDS = ["experiment_name", "metric", "mean", "median", "std", "count"]
 
+STATUS_FIELDS = [
+    "experiment_name",
+    "status",
+    "dataset",
+    "split",
+    "mode",
+    "error",
+    "started_at",
+    "finished_at",
+]
 
-def write_experiment_summary(experiments_root: str | Path) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+
+def write_experiment_summary(
+    experiments_root: str | Path,
+) -> tuple[list[dict[str, str]], list[dict[str, str]], list[dict[str, str]]]:
     root = Path(experiments_root)
+    status_rows = _collect_status_rows(root)
     rows = _collect_summary_rows(root)
     metrics = _aggregate_rows(rows)
     _write_csv(root / "summary_all.csv", SUMMARY_FIELDS, rows)
     _write_csv(root / "metrics_by_experiment.csv", METRIC_FIELDS, metrics)
-    return rows, metrics
+    _write_csv(root / "experiment_status.csv", STATUS_FIELDS, status_rows)
+    return rows, metrics, status_rows
+
+
+def _collect_status_rows(root: Path) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    if not root.exists():
+        return rows
+    for experiment_dir in sorted(path for path in root.iterdir() if path.is_dir()):
+        status = _read_status(experiment_dir / "run_status.json", experiment_dir.name)
+        rows.append(
+            {
+                "experiment_name": status.get("name", experiment_dir.name),
+                "status": status.get("status", ""),
+                "dataset": status.get("dataset", ""),
+                "split": status.get("split", ""),
+                "mode": status.get("mode", ""),
+                "error": status.get("error", ""),
+                "started_at": status.get("started_at", ""),
+                "finished_at": status.get("finished_at", ""),
+            }
+        )
+    return rows
 
 
 def _collect_summary_rows(root: Path) -> list[dict[str, str]]:
@@ -79,10 +115,11 @@ def _collect_summary_rows(root: Path) -> list[dict[str, str]]:
 
 
 def _aggregate_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
-    experiments = sorted({row["experiment_name"] for row in rows})
+    success_rows = [row for row in rows if row.get("status") in {"", "success"}]
+    experiments = sorted({row["experiment_name"] for row in success_rows})
     metric_rows: list[dict[str, str]] = []
     for experiment in experiments:
-        experiment_rows = [row for row in rows if row["experiment_name"] == experiment]
+        experiment_rows = [row for row in success_rows if row["experiment_name"] == experiment]
         for metric in AGGREGATE_METRICS:
             values = [_to_float(row.get(metric, "")) for row in experiment_rows]
             clean = [value for value in values if value is not None]

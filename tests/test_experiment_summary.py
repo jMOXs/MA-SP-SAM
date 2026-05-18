@@ -35,10 +35,13 @@ def test_experiment_summary_merges_experiments_and_aggregates_metrics(tmp_path):
     root = tmp_path / "experiments"
     exp_a = root / "tem1_internal"
     exp_b = root / "tem2_external"
+    exp_failed = root / "tem_failed"
     exp_a.mkdir(parents=True)
     exp_b.mkdir(parents=True)
+    exp_failed.mkdir(parents=True)
     _write_status(exp_a / "run_status.json", name="tem1_internal", dataset="TEM1", split="test")
     _write_status(exp_b / "run_status.json", name="tem2_external", dataset="TEM2", split="test")
+    _write_status(exp_failed / "run_status.json", name="tem_failed", dataset="TEM1", split="test", status="preflight_failed")
     _write_csv(
         exp_a / "summary.csv",
         [
@@ -110,15 +113,20 @@ def test_experiment_summary_merges_experiments_and_aggregates_metrics(tmp_path):
         ],
     )
 
-    rows, metrics = write_experiment_summary(root)
+    rows, metrics, status_rows = write_experiment_summary(root)
     summary_rows = list(csv.DictReader((root / "summary_all.csv").open("r", encoding="utf-8")))
     metric_rows = list(csv.DictReader((root / "metrics_by_experiment.csv").open("r", encoding="utf-8")))
+    saved_status_rows = list(csv.DictReader((root / "experiment_status.csv").open("r", encoding="utf-8")))
 
     assert rows == summary_rows
     assert len(summary_rows) == 3
     assert summary_rows[0]["experiment_name"] == "tem1_internal"
     assert summary_rows[2]["dataset"] == "TEM2"
     assert metrics == metric_rows
+    assert status_rows == saved_status_rows
+    assert {row["experiment_name"] for row in saved_status_rows} == {"tem1_internal", "tem2_external", "tem_failed"}
+    failed_rows = [row for row in saved_status_rows if row["experiment_name"] == "tem_failed"]
+    assert failed_rows[0]["status"] == "preflight_failed"
     axon_rows = [row for row in metric_rows if row["experiment_name"] == "tem1_internal" and row["metric"] == "axon_dice"]
     assert axon_rows[0]["count"] == "2"
     assert axon_rows[0]["mean"] == "0.7"

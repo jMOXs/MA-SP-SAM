@@ -152,6 +152,8 @@ Before running full experiments:
 3. Install optional `segment-anything` and prepare a local SAM checkpoint for full mode.
 4. Review `configs/experiments/astih_v1.yaml` and update paths/device/limit as needed.
 
+`configs/experiments/astih_v1.yaml` is the formal full-mode configuration for TEM1 internal and TEM2 external experiments. `configs/experiments/astih_v1_smoke.yaml` is for debug/smoke runs with `mode: skip_sam`; do not treat smoke output as a formal result.
+
 Preview the experiment plan without executing:
 
 ```bash
@@ -168,13 +170,26 @@ python scripts/run_astih_v1_experiments.py \
   --only tem1_internal,tem2_external
 ```
 
-Each experiment writes to `outputs/experiments/{experiment_name}` with `resolved_config.yaml`, `run_status.json`, and the V1 pipeline outputs. The runner also writes:
+## Preflight before ASTIH experiments
+
+Run preflight before a long experiment batch:
+
+```bash
+python scripts/run_astih_v1_experiments.py \
+  --config configs/experiments/astih_v1.yaml \
+  --preflight-only
+```
+
+Preflight checks the Self-Prompt checkpoint/config, processed label root, dataset/split processed directory, full-mode SAM checkpoint, `segment-anything` importability, and skip-sam candidate directories. Strict preflight is enabled by default: failed checks mark that experiment as `preflight_failed` and prevent the pipeline for that experiment from running, while the runner continues to the next experiment. Use `--no-strict-preflight` only when you want to record failed checks but still allow the pipeline attempt.
+
+Each experiment writes to `outputs/experiments/{experiment_name}` with `resolved_config.yaml`, `preflight.json`, `run_status.json`, and the V1 pipeline outputs. The runner also writes:
 
 ```text
+outputs/experiments/experiment_status.csv
 outputs/experiments/summary_all.csv
 outputs/experiments/metrics_by_experiment.csv
 ```
 
-`summary_all.csv` keeps per-sample proposal, SAM, refinement, and GT-QC fields. `metrics_by_experiment.csv` aggregates numeric metrics such as Dice, fiber IoU50 recall/precision, pair accuracy proxy, g-ratio MAE, and proposal recall/precision.
+`experiment_status.csv` is the first file to check: it records whether each experiment succeeded, failed, or stopped at `preflight_failed`, along with the error message and timestamps. `summary_all.csv` keeps per-sample proposal, SAM, refinement, and GT-QC fields. `metrics_by_experiment.csv` aggregates numeric metrics such as Dice, fiber IoU50 recall/precision, pair accuracy proxy, g-ratio MAE, and proposal recall/precision.
 
 `mode: skip_sam` is intended only for smoke tests and debugging with existing SAM candidate files. It is not a formal experiment result.
