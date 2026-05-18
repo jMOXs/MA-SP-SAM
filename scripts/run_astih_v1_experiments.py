@@ -57,7 +57,7 @@ def run_experiments(
     all_experiments = config.get("experiments", [])
     _validate_only_names(all_experiments, only)
     experiments = _selected_experiments(all_experiments, only)
-    disabled = _disabled_experiments(all_experiments, None)
+    disabled = _disabled_experiments(all_experiments, only)
     work_root = _resolve(config.get("work_root", "outputs/experiments"))
 
     if dry_run:
@@ -79,7 +79,7 @@ def run_experiments(
         work_dir.mkdir(parents=True, exist_ok=True)
         _write_yaml(work_dir / "resolved_config.yaml", resolved)
         status = _initial_status(resolved)
-        preflight = check_experiment_preflight(resolved, strict=strict_preflight)
+        preflight = check_experiment_preflight(resolved)
         _write_json(work_dir / "preflight.json", preflight)
         preflight_failed = has_failed_checks(preflight)
         if preflight_only:
@@ -169,6 +169,11 @@ def _resolved_config(config: dict[str, Any], experiment: dict[str, Any], work_ro
     mode = str(experiment.get("mode", "full"))
     if mode not in {"full", "skip_sam"}:
         raise ValueError(f"Unsupported experiment mode for {name}: {mode}")
+    self_prompt_config = _optional_path_str(experiment.get("self_prompt_config", config.get("self_prompt_config", "")))
+    processed_root = _resolved_processed_root(
+        explicit=experiment.get("processed_root", config.get("processed_root", "")),
+        self_prompt_config=self_prompt_config,
+    )
     resolved = {
         "name": name,
         "dataset": str(experiment.get("dataset", config.get("dataset", "TEM1"))),
@@ -176,11 +181,11 @@ def _resolved_config(config: dict[str, Any], experiment: dict[str, Any], work_ro
         "mode": mode,
         "enabled": bool(experiment.get("enabled", True)),
         "self_prompt_checkpoint": _optional_path_str(experiment.get("self_prompt_checkpoint", config.get("self_prompt_checkpoint", ""))),
-        "self_prompt_config": _optional_path_str(experiment.get("self_prompt_config", config.get("self_prompt_config", ""))),
+        "self_prompt_config": self_prompt_config,
         "sam_checkpoint": _optional_path_str(experiment.get("sam_checkpoint", config.get("sam_checkpoint", ""))),
         "sam_model_type": str(experiment.get("sam_model_type", config.get("sam_model_type", "vit_b"))),
         "segment_anything_required": bool(experiment.get("segment_anything_required", config.get("segment_anything_required", True))),
-        "processed_root": _optional_path_str(experiment.get("processed_root", config.get("processed_root", ""))),
+        "processed_root": processed_root,
         "limit": experiment.get("limit", config.get("limit")),
         "device": experiment.get("device", config.get("device")),
         "use_mask_input": bool(experiment.get("use_mask_input", config.get("use_mask_input", False))),
@@ -217,6 +222,18 @@ def _optional_path_str(value: Any) -> str:
     if value in (None, ""):
         return ""
     return str(_resolve(value))
+
+
+def _resolved_processed_root(*, explicit: Any, self_prompt_config: str) -> str:
+    if explicit not in (None, ""):
+        return _optional_path_str(explicit)
+    if not self_prompt_config:
+        return ""
+    config_path = Path(self_prompt_config)
+    if not config_path.exists():
+        return ""
+    config = load_yaml(config_path)
+    return _optional_path_str(config.get("processed_root", ""))
 
 
 def _now() -> str:

@@ -7,9 +7,8 @@ from typing import Any
 from ma_sp_sam.utils.io import load_yaml
 
 
-def check_experiment_preflight(resolved_config: dict[str, Any], *, strict: bool = True) -> list[dict[str, str]]:
+def check_experiment_preflight(resolved_config: dict[str, Any]) -> list[dict[str, str]]:
     """Check experiment inputs before starting a V1 run."""
-    del strict
     checks: list[dict[str, str]] = []
     self_prompt_checkpoint = _path_or_none(resolved_config.get("self_prompt_checkpoint"))
     self_prompt_config = _path_or_none(resolved_config.get("self_prompt_config"))

@@ -145,6 +145,8 @@ The merged report is written to `outputs/v1_pipeline/summary.csv` with key field
 
 ASTIH V1 experiment runner is a thin orchestration layer for repeated TEM1/TEM2 V1 runs. It records each experiment configuration, writes per-run status files, and builds cross-experiment summaries for later formal experiments and ablations.
 
+For the full real-run checklist, see [docs/RUN_ASTIH_V1.md](docs/RUN_ASTIH_V1.md).
+
 Before running full experiments:
 
 1. Prepare ASTIH processed labels with `scripts/prepare_data.py`.
@@ -191,5 +193,11 @@ outputs/experiments/metrics_by_experiment.csv
 ```
 
 `experiment_status.csv` is the first file to check: it records whether each experiment succeeded, failed, or stopped at `preflight_failed`, along with the error message and timestamps. `summary_all.csv` keeps per-sample proposal, SAM, refinement, and GT-QC fields. `metrics_by_experiment.csv` aggregates numeric metrics such as Dice, fiber IoU50 recall/precision, pair accuracy proxy, g-ratio MAE, and proposal recall/precision.
+
+After a run, check required outputs and sparse metrics:
+
+```bash
+python scripts/check_experiment_outputs.py --experiments-root outputs/experiments
+```
 
 `mode: skip_sam` is intended only for smoke tests and debugging with existing SAM candidate files. It is not a formal experiment result.

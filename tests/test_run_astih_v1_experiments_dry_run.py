@@ -54,8 +54,49 @@ experiments:
 
     assert "tem1_internal" in result.stdout
     assert "tem1_skip_sam_smoke" in result.stdout
-    assert "disabled: tem2_external" in result.stdout
+    assert "disabled: tem2_external" not in result.stdout
     assert not work_root.exists()
+
+
+def test_astih_v1_experiment_runner_dry_run_prints_selected_disabled_experiments(tmp_path):
+    work_root = tmp_path / "experiments"
+    config_path = tmp_path / "astih_v1.yaml"
+    config_path.write_text(
+        f"""
+self_prompt_checkpoint: {tmp_path / "missing_self_prompt.pt"}
+self_prompt_config: {tmp_path / "missing_self_prompt.yaml"}
+sam_checkpoint: {tmp_path / "missing_sam.pth"}
+work_root: {work_root}
+experiments:
+  - name: tem1_internal
+    dataset: TEM1
+    split: test
+    mode: full
+  - name: tem2_external
+    dataset: TEM2
+    split: test
+    mode: full
+    enabled: false
+""",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(PROJECT_ROOT / "scripts" / "run_astih_v1_experiments.py"),
+            "--config",
+            str(config_path),
+            "--dry-run",
+        ],
+        cwd=PROJECT_ROOT,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    assert "tem1_internal" in result.stdout
+    assert "disabled: tem2_external" in result.stdout
 
 
 def test_astih_v1_experiment_runner_rejects_unknown_only_name(tmp_path):

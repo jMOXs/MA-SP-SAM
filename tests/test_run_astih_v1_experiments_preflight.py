@@ -84,3 +84,40 @@ def test_astih_v1_no_strict_preflight_records_fails_but_does_not_mark_preflight_
     assert status["status"] == "failed"
     assert "No such file" in status["error"] or "missing_self_prompt" in status["error"]
     assert any(check["status"] == "fail" for check in preflight)
+
+
+def test_astih_v1_preflight_resolves_processed_root_from_self_prompt_config(tmp_path):
+    work_root = tmp_path / "experiments"
+    config_path = tmp_path / "astih_v1.yaml"
+    config_path.write_text(
+        f"""
+self_prompt_checkpoint: {tmp_path / "missing_self_prompt.pt"}
+self_prompt_config: configs/train/self_prompt.yaml
+sam_checkpoint: {tmp_path / "missing_sam.pth"}
+work_root: {work_root}
+experiments:
+  - name: tem1_preflight
+    dataset: TEM1
+    split: test
+    mode: full
+""",
+        encoding="utf-8",
+    )
+
+    subprocess.run(
+        [
+            sys.executable,
+            str(PROJECT_ROOT / "scripts" / "run_astih_v1_experiments.py"),
+            "--config",
+            str(config_path),
+            "--preflight-only",
+        ],
+        cwd=PROJECT_ROOT,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    preflight = json.loads((work_root / "tem1_preflight" / "preflight.json").read_text(encoding="utf-8"))
+    processed_root = [check for check in preflight if check["name"] == "processed_root"][0]
+    assert str(PROJECT_ROOT / "data" / "processed" / "astih_tem") in processed_root["message"]
