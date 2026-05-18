@@ -149,7 +149,7 @@ def train(config: dict[str, Any]) -> Path:
     best_path = checkpoint_dir / "best.pt"
     best_loss = float("inf")
     epochs = int(config.get("epochs", 1))
-    summary_interval = max(1, int(config.get("proposal_summary_interval", 1)))
+    summary_interval = int(config.get("proposal_summary_interval", 0))
     for epoch in range(1, epochs + 1):
         train_loss = train_one_epoch(model, train_loader, criterion, optimizer, device)
         print(f"epoch={epoch} train_loss={train_loss:.6f}")
@@ -165,7 +165,7 @@ def train(config: dict[str, Any]) -> Path:
                 },
                 best_path,
             )
-        if epoch % summary_interval == 0:
+        if summary_interval > 0 and epoch % summary_interval == 0:
             summary = proposal_summary(
                 model,
                 val_loader,
