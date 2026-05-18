@@ -131,7 +131,6 @@ Skip-SAM mode is for reusing existing SAM candidates already saved under `work-d
 python scripts/run_v1_pipeline.py \
   --self-prompt-checkpoint checkpoints/self_prompt/best.pt \
   --self-prompt-config configs/train/self_prompt.yaml \
-  --sam-checkpoint /path/to/unused_or_existing_sam.pth \
   --dataset TEM1 \
   --split test \
   --limit 5 \
@@ -141,3 +140,41 @@ python scripts/run_v1_pipeline.py \
 ```
 
 The merged report is written to `outputs/v1_pipeline/summary.csv` with key fields from self-prompt proposals, SAM candidates, refinement counts, and optional GT-QC metrics.
+
+## Running ASTIH V1 experiments
+
+ASTIH V1 experiment runner is a thin orchestration layer for repeated TEM1/TEM2 V1 runs. It records each experiment configuration, writes per-run status files, and builds cross-experiment summaries for later formal experiments and ablations.
+
+Before running full experiments:
+
+1. Prepare ASTIH processed labels with `scripts/prepare_data.py`.
+2. Train or provide a Self-Prompt checkpoint, usually `checkpoints/self_prompt/best.pt`.
+3. Install optional `segment-anything` and prepare a local SAM checkpoint for full mode.
+4. Review `configs/experiments/astih_v1.yaml` and update paths/device/limit as needed.
+
+Preview the experiment plan without executing:
+
+```bash
+python scripts/run_astih_v1_experiments.py \
+  --config configs/experiments/astih_v1.yaml \
+  --dry-run
+```
+
+Run selected experiments:
+
+```bash
+python scripts/run_astih_v1_experiments.py \
+  --config configs/experiments/astih_v1.yaml \
+  --only tem1_internal,tem2_external
+```
+
+Each experiment writes to `outputs/experiments/{experiment_name}` with `resolved_config.yaml`, `run_status.json`, and the V1 pipeline outputs. The runner also writes:
+
+```text
+outputs/experiments/summary_all.csv
+outputs/experiments/metrics_by_experiment.csv
+```
+
+`summary_all.csv` keeps per-sample proposal, SAM, refinement, and GT-QC fields. `metrics_by_experiment.csv` aggregates numeric metrics such as Dice, fiber IoU50 recall/precision, pair accuracy proxy, g-ratio MAE, and proposal recall/precision.
+
+`mode: skip_sam` is intended only for smoke tests and debugging with existing SAM candidate files. It is not a formal experiment result.

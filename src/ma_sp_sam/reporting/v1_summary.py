@@ -6,15 +6,25 @@ from typing import Iterable
 
 
 SUMMARY_FIELDS = [
+    "dataset",
+    "split",
     "sample_id",
     "num_proposals",
     "proposal_recall50",
+    "proposal_precision50",
+    "proposal_f1_50",
+    "foreground_pixel_ratio",
     "num_sam_predictions",
     "num_refined_instances",
+    "fiber_iou50_recall",
+    "fiber_iou50_precision",
     "mean_g_ratio",
     "axon_dice",
     "myelin_dice",
+    "pair_accuracy_proxy",
     "g_ratio_mae",
+    "num_missing_axon",
+    "num_missing_myelin",
 ]
 
 
@@ -40,15 +50,25 @@ def write_v1_summary(
         refined_row = by_refined.get(key, {})
         rows.append(
             {
+                "dataset": key[0],
+                "split": key[1],
                 "sample_id": key[2],
                 "num_proposals": self_row.get("num_proposals", ""),
                 "proposal_recall50": self_row.get("proposal_recall50", ""),
+                "proposal_precision50": self_row.get("proposal_precision50", ""),
+                "proposal_f1_50": self_row.get("proposal_f1_50", ""),
+                "foreground_pixel_ratio": self_row.get("foreground_pixel_ratio", ""),
                 "num_sam_predictions": sam_row.get("num_sam_predictions", ""),
                 "num_refined_instances": refined_row.get("num_refined_instances", ""),
+                "fiber_iou50_recall": refined_row.get("fiber_iou50_recall", ""),
+                "fiber_iou50_precision": refined_row.get("fiber_iou50_precision", ""),
                 "mean_g_ratio": refined_row.get("mean_g_ratio", ""),
                 "axon_dice": refined_row.get("axon_dice", ""),
                 "myelin_dice": refined_row.get("myelin_dice", ""),
+                "pair_accuracy_proxy": refined_row.get("pair_accuracy_proxy", ""),
                 "g_ratio_mae": refined_row.get("g_ratio_mae", ""),
+                "num_missing_axon": refined_row.get("num_missing_axon", ""),
+                "num_missing_myelin": refined_row.get("num_missing_myelin", ""),
             }
         )
 

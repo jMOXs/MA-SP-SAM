@@ -25,7 +25,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run MA-SP-SAM End-to-End V1 pipeline.")
     parser.add_argument("--self-prompt-checkpoint", required=True)
     parser.add_argument("--self-prompt-config", default="configs/train/self_prompt.yaml")
-    parser.add_argument("--sam-checkpoint", required=True)
+    parser.add_argument("--sam-checkpoint", default=None)
     parser.add_argument("--sam-model-type", default="vit_b")
     parser.add_argument("--dataset", default="TEM1")
     parser.add_argument("--split", default="test")
@@ -35,12 +35,14 @@ def main() -> None:
     parser.add_argument("--use-mask-input", action="store_true")
     parser.add_argument("--skip-sam", action="store_true")
     args = parser.parse_args()
+    if not args.skip_sam and not args.sam_checkpoint:
+        parser.error("--sam-checkpoint is required unless --skip-sam is used")
 
     try:
         run_v1_pipeline(
             self_prompt_checkpoint=_resolve(args.self_prompt_checkpoint),
             self_prompt_config=_resolve(args.self_prompt_config),
-            sam_checkpoint=_resolve(args.sam_checkpoint),
+            sam_checkpoint=None if args.sam_checkpoint is None else _resolve(args.sam_checkpoint),
             sam_model_type=args.sam_model_type,
             dataset=args.dataset,
             split=args.split,
@@ -61,7 +63,7 @@ def run_v1_pipeline(
     *,
     self_prompt_checkpoint: Path,
     self_prompt_config: Path,
-    sam_checkpoint: Path,
+    sam_checkpoint: Path | None,
     sam_model_type: str,
     dataset: str,
     split: str,
@@ -91,6 +93,8 @@ def run_v1_pipeline(
         if not sam_dir.exists():
             raise FileNotFoundError(f"--skip-sam requires existing SAM predictions under {sam_dir}.")
     else:
+        if sam_checkpoint is None:
+            raise ValueError("--sam-checkpoint is required unless --skip-sam is used")
         run_sam_prediction(
             self_prompt_checkpoint=self_prompt_checkpoint,
             self_prompt_config=self_prompt_config,

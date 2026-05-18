@@ -54,8 +54,6 @@ def test_v1_pipeline_skip_sam_uses_existing_sam_predictions(tmp_path):
             str(checkpoint),
             "--self-prompt-config",
             str(config_path),
-            "--sam-checkpoint",
-            str(tmp_path / "unused_sam.pth"),
             "--dataset",
             "TEM1",
             "--split",
@@ -82,3 +80,29 @@ def test_v1_pipeline_skip_sam_uses_existing_sam_predictions(tmp_path):
     assert rows[0]["sample_id"] == "synthetic_0000"
     assert "num_proposals" in rows[0]
     assert "num_refined_instances" in rows[0]
+
+
+def test_v1_pipeline_requires_sam_checkpoint_for_full_mode(tmp_path):
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(PROJECT_ROOT / "scripts" / "run_v1_pipeline.py"),
+            "--self-prompt-checkpoint",
+            str(tmp_path / "missing_self_prompt.pt"),
+            "--self-prompt-config",
+            str(tmp_path / "missing_config.yaml"),
+            "--dataset",
+            "TEM1",
+            "--split",
+            "test",
+            "--work-dir",
+            str(tmp_path / "v1"),
+        ],
+        cwd=PROJECT_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "--sam-checkpoint is required unless --skip-sam is used" in result.stderr
